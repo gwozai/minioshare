@@ -11,7 +11,5 @@ services:
       - MINIO_SECRET_KEY=ei2BEHZYLaR8eGtT
       - MINIO_BUCKET=album
       - MINIO_SECURE=false
-      - FLASK_SECRET_KEY=your-secret-key-here
-      - ACCESS_PASSWORD=minioshare123
       - FLASK_DEBUG=false
     restart: unless-stopped 

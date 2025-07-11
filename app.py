@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, flash, redirect, url_for, session
+from flask import Flask, render_template, request, jsonify, flash
 from minio import Minio
 from datetime import timedelta
 import json
@@ -7,7 +7,6 @@ from dotenv import load_dotenv
 import logging
 from io import BytesIO
 from math import ceil
-from functools import wraps
 
 # 配置日志
 logging.basicConfig(level=logging.DEBUG)
@@ -17,10 +16,9 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = os.getenv('FLASK_SECRET_KEY', os.urandom(24))
 
 # 每页显示的文件数量
-FILES_PER_PAGE = 10
+FILES_PER_PAGE = 50
 
 # MinIO configuration from environment variables
 MINIO_CONFIG = {
@@ -31,8 +29,6 @@ MINIO_CONFIG = {
     'secure': os.getenv('MINIO_SECURE', 'False').lower() == 'true'
 }
 
-# Access password
-ACCESS_PASSWORD = os.getenv('ACCESS_PASSWORD', 'minioshare123')
 
 def get_minio_client():
     """Get MinIO client from configuration"""
@@ -48,35 +44,10 @@ def get_minio_client():
         logger.error("Error creating MinIO client: %s", str(e))
         return None
 
-def login_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if not session.get('logged_in'):
-            flash('Please login first', 'warning')
-            return redirect(url_for('login'))
-        return f(*args, **kwargs)
-    return decorated_function
 
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        password = request.form.get('password')
-        if password == ACCESS_PASSWORD:
-            session['logged_in'] = True
-            flash('Login successful', 'success')
-            return redirect(url_for('index'))
-        else:
-            flash('Invalid password', 'danger')
-    return render_template('login.html')
 
-@app.route('/logout')
-def logout():
-    session.pop('logged_in', None)
-    flash('Logged out successfully', 'success')
-    return redirect(url_for('login'))
 
 @app.route('/')
-@login_required
 def index():
     """Home page - show file list with pagination and sorting"""
     client = get_minio_client()
@@ -105,6 +76,7 @@ def index():
         page = int(request.args.get('page', 1))
         sort_by = request.args.get('sort', 'date')  # 'date', 'name', 'size'
         order = request.args.get('order', 'desc')   # 'asc', 'desc'
+        search_query = request.args.get('search', '').strip().lower()
         
         # List objects in the configured bucket
         bucket = MINIO_CONFIG['bucket']
@@ -113,42 +85,67 @@ def index():
         
         if client.bucket_exists(bucket):
             logger.debug("Bucket exists, listing objects")
-            # 获取所有对象
-            for obj in client.list_objects(bucket):
+            # 获取所有对象（包括嵌套目录）
+            for obj in client.list_objects(bucket, recursive=True):
                 try:
                     # 检查对象是否以斜杠结尾（目录）
                     if obj.object_name.endswith('/'):
                         objects.append({
                             'name': obj.object_name,
+                            'display_name': obj.object_name.rstrip('/').split('/')[-1] or obj.object_name,
+                            'full_path': obj.object_name.rstrip('/'),
                             'size': 0,
                             'last_modified': obj.last_modified.isoformat() if obj.last_modified else None,
-                            'is_directory': True
+                            'is_directory': True,
+                            'depth': obj.object_name.count('/') - 1
                         })
                     else:
                         stat = client.stat_object(bucket, obj.object_name)
                         objects.append({
                             'name': obj.object_name,
+                            'display_name': obj.object_name.split('/')[-1],
+                            'full_path': obj.object_name,
                             'size': stat.size,
                             'last_modified': stat.last_modified.isoformat() if stat.last_modified else None,
-                            'is_directory': False
+                            'is_directory': False,
+                            'depth': obj.object_name.count('/')
                         })
                 except Exception as stat_error:
                     logger.error("Error getting object stats: %s", str(stat_error))
                     # 如果获取状态失败，仍然添加基本信息
+                    is_directory = obj.object_name.endswith('/')
+                    if is_directory:
+                        display_name = obj.object_name.rstrip('/').split('/')[-1]
+                        full_path = obj.object_name.rstrip('/')
+                        depth = obj.object_name.count('/') - 1
+                    else:
+                        display_name = obj.object_name.split('/')[-1]
+                        full_path = obj.object_name
+                        depth = obj.object_name.count('/')
+                    
                     objects.append({
                         'name': obj.object_name,
+                        'display_name': display_name or obj.object_name,
+                        'full_path': full_path,
                         'size': 0,
                         'last_modified': obj.last_modified.isoformat() if obj.last_modified else None,
-                        'is_directory': obj.object_name.endswith('/')
+                        'is_directory': is_directory,
+                        'depth': depth
                     })
+            
+            # 过滤搜索结果
+            if search_query:
+                objects = [obj for obj in objects if search_query in obj['display_name'].lower() or search_query in obj['full_path'].lower()]
             
             # 排序
             if sort_by == 'date':
+                # 按修改时间排序，最新的在前面
                 objects.sort(key=lambda x: x['last_modified'] or '', reverse=(order == 'desc'))
             elif sort_by == 'name':
-                objects.sort(key=lambda x: x['name'].lower(), reverse=(order == 'desc'))
+                # 按完整路径排序，保持目录结构
+                objects.sort(key=lambda x: x['full_path'].lower(), reverse=(order == 'desc'))
             elif sort_by == 'size':
-                # 目录始终排在文件前面
+                # 按大小排序，目录始终在前面
                 objects.sort(key=lambda x: (not x['is_directory'], x['size']), reverse=(order == 'desc'))
             
             # 分页
@@ -218,7 +215,6 @@ def index():
             return render_template('index.html', is_admin=True)
 
 @app.route('/share/<path:object_name>')
-@login_required
 def share_file(object_name):
     """Generate a presigned URL for file sharing"""
     logger.debug("Generating share URL for object: %s", object_name)
@@ -239,7 +235,6 @@ def share_file(object_name):
         return jsonify({'error': str(e)}), 400
 
 @app.route('/upload', methods=['POST'])
-@login_required
 def upload_file():
     """Handle file upload"""
     if 'file' not in request.files:
@@ -307,4 +302,4 @@ if __name__ == '__main__':
             logger.info("Creating bucket: %s", bucket)
             client.make_bucket(bucket)
     
-    app.run(host='0.0.0.0', port=5000, debug=os.getenv('FLASK_DEBUG', 'True').lower() == 'true') 
+    app.run(host='0.0.0.0', port=5001, debug=os.getenv('FLASK_DEBUG', 'True').lower() == 'true')
