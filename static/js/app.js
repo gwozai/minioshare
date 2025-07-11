@@ -1,4 +1,4 @@
-const { createApp, ref, onMounted } = Vue;
+const { createApp, ref, onMounted, computed } = Vue;
 
 // 配置axios默认请求头
 axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
@@ -240,6 +240,7 @@ createApp({
             pagination.value.page = 1;
             loadFiles();
         };
+
 
         // 初始化模态框
         const initModals = () => {

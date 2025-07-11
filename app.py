@@ -90,16 +90,21 @@ def index():
                 try:
                     # 检查对象是否以斜杠结尾（目录）
                     if obj.object_name.endswith('/'):
+                        # 目录的深度计算：去掉末尾的斜杠后计算斜杠数量
+                        clean_path = obj.object_name.rstrip('/')
+                        depth = clean_path.count('/') if clean_path else 0
                         objects.append({
                             'name': obj.object_name,
-                            'display_name': obj.object_name.rstrip('/').split('/')[-1] or obj.object_name,
-                            'full_path': obj.object_name.rstrip('/'),
+                            'display_name': clean_path.split('/')[-1] if clean_path else obj.object_name,
+                            'full_path': clean_path,
                             'size': 0,
                             'last_modified': obj.last_modified.isoformat() if obj.last_modified else None,
                             'is_directory': True,
-                            'depth': obj.object_name.count('/') - 1
+                            'depth': depth
                         })
                     else:
+                        # 文件的深度计算：直接计算斜杠数量
+                        depth = obj.object_name.count('/')
                         stat = client.stat_object(bucket, obj.object_name)
                         objects.append({
                             'name': obj.object_name,
@@ -108,16 +113,17 @@ def index():
                             'size': stat.size,
                             'last_modified': stat.last_modified.isoformat() if stat.last_modified else None,
                             'is_directory': False,
-                            'depth': obj.object_name.count('/')
+                            'depth': depth
                         })
                 except Exception as stat_error:
                     logger.error("Error getting object stats: %s", str(stat_error))
                     # 如果获取状态失败，仍然添加基本信息
                     is_directory = obj.object_name.endswith('/')
                     if is_directory:
-                        display_name = obj.object_name.rstrip('/').split('/')[-1]
-                        full_path = obj.object_name.rstrip('/')
-                        depth = obj.object_name.count('/') - 1
+                        clean_path = obj.object_name.rstrip('/')
+                        display_name = clean_path.split('/')[-1] if clean_path else obj.object_name
+                        full_path = clean_path
+                        depth = clean_path.count('/') if clean_path else 0
                     else:
                         display_name = obj.object_name.split('/')[-1]
                         full_path = obj.object_name
@@ -137,16 +143,31 @@ def index():
             if search_query:
                 objects = [obj for obj in objects if search_query in obj['display_name'].lower() or search_query in obj['full_path'].lower()]
             
-            # 排序
+            # 排序 - 优化目录结构显示
             if sort_by == 'date':
-                # 按修改时间排序，最新的在前面
-                objects.sort(key=lambda x: x['last_modified'] or '', reverse=(order == 'desc'))
+                # 按修改时间排序，但保持目录结构层次
+                objects.sort(key=lambda x: (
+                    x['depth'],  # 先按深度排序
+                    x['full_path'].lower().split('/')[:-1],  # 然后按父目录路径排序
+                    not x['is_directory'],  # 目录优先
+                    x['last_modified'] or ''
+                ), reverse=(order == 'desc'))
             elif sort_by == 'name':
-                # 按完整路径排序，保持目录结构
-                objects.sort(key=lambda x: x['full_path'].lower(), reverse=(order == 'desc'))
+                # 按名称排序，保持目录结构和层次
+                objects.sort(key=lambda x: (
+                    x['depth'],  # 先按深度排序
+                    x['full_path'].lower().split('/')[:-1],  # 然后按父目录路径排序
+                    not x['is_directory'],  # 目录优先
+                    x['display_name'].lower()
+                ), reverse=(order == 'desc'))
             elif sort_by == 'size':
-                # 按大小排序，目录始终在前面
-                objects.sort(key=lambda x: (not x['is_directory'], x['size']), reverse=(order == 'desc'))
+                # 按大小排序，但保持目录结构
+                objects.sort(key=lambda x: (
+                    x['depth'],  # 先按深度排序
+                    x['full_path'].lower().split('/')[:-1],  # 然后按父目录路径排序
+                    not x['is_directory'],  # 目录优先
+                    x['size']
+                ), reverse=(order == 'desc'))
             
             # 分页
             total_files = len(objects)

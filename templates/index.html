@@ -1,6 +1,21 @@
 {% extends "base.html" %}
 
 {% block content %}
+<style>
+/* 表格行的悬停效果 */
+.table tbody tr:hover {
+    background-color: #f8f9fa;
+}
+
+/* 目录行的特殊样式 */
+.directory-row {
+    background-color: #fff8e1;
+}
+
+.directory-row:hover {
+    background-color: #fff3cd;
+}
+</style>
 <div id="app">
     <!-- Error/Success Messages -->
     <div v-if="errorMessage" class="alert alert-danger alert-dismissible fade show" role="alert">
@@ -81,7 +96,7 @@
                             </thead>
                             <tbody>
                                 <template v-if="files.length > 0">
-                                    <tr v-for="file in files" :key="file.name">
+                                    <tr v-for="file in files" :key="file.name" :class="{ 'directory-row': file.is_directory }">
                                         <td>
                                             <div class="form-check">
                                                 <input class="form-check-input" type="checkbox" 
@@ -92,12 +107,13 @@
                                         </td>
                                         <td>
                                             <div class="d-flex align-items-center">
-                                                <span :style="{ paddingLeft: (file.depth || 0) * 15 + 'px' }">
-                                                    <i :class="['bi', file.is_directory ? 'bi-folder-fill text-warning' : 'bi-file-earmark text-primary']"></i>
-                                                </span>
-                                                <div class="ms-2">
+                                                <i :class="[
+                                                    'bi me-2',
+                                                    file.is_directory ? 'bi-folder-fill text-warning' : 'bi-file-earmark text-primary'
+                                                ]"></i>
+                                                <div>
                                                     <div class="fw-medium">[[ file.display_name ]]</div>
-                                                    <small v-if="file.depth > 0" class="text-muted">[[ file.full_path ]]</small>
+                                                    <small v-if="file.full_path !== file.display_name" class="text-muted">[[ file.full_path ]]</small>
                                                 </div>
                                             </div>
                                         </td>

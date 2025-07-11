@@ -4,7 +4,7 @@ services:
   web:
     build: .
     ports:
-      - "0.0.0.0:5000:5000"
+      - "0.0.0.0:5001:5001"
     environment:
       - MINIO_ENDPOINT=106.12.107.176:19000
       - MINIO_ACCESS_KEY=minio
