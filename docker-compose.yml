@@ -7,8 +7,8 @@ services:
       - "0.0.0.0:5001:5001"
     environment:
       - MINIO_ENDPOINT=106.12.107.176:19000
-      - MINIO_ACCESS_KEY=minio
-      - MINIO_SECRET_KEY=ei2BEHZYLaR8eGtT
+      - MINIO_ACCESS_KEY=CoIozXODfL
+      - MINIO_SECRET_KEY=CfPOTFq3Z6fs
       - MINIO_BUCKET=album
       - MINIO_SECURE=false
       - FLASK_DEBUG=false

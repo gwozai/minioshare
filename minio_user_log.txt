@@ -1,0 +1,4 @@
+2025-09-13 11:59:50 - 用户名: CoIozXODfL
+2025-09-13 11:59:50 - 密码: CfPOTFq3Z6fs
+2025-09-13 11:59:50 - 创建命令: mc admin user add myminio CoIozXODfL CfPOTFq3Z6fs
+2025-09-13 11:59:50 - 分配命令: mc admin policy attach myminio consoleAdmin --user=CoIozXODfL
